@@ -1,0 +1,228 @@
+---
+title: "STA238 FINAL PROJECT"
+author: "Henry Jia Yang Lu"
+date: "4/10/2022"
+output: pdf_document
+---
+
+```{r, message= FALSE}
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+IBM_data <- read_csv("IBM HR-Employee-Attrition.csv")
+```
+
+```{r}
+#Plot the scatter plot
+Male_data <- IBM_data%>%filter(Gender == "Male")
+Sales_data <- Male_data%>%filter(Department == "Sales")
+
+SLR_data <- tibble(monthly_income = Sales_data$MonthlyIncome, 
+               total_work_year = Sales_data$TotalWorkingYears)
+
+ggplot(SLR_data, aes(x=total_work_year, y=monthly_income))+
+  geom_point()+
+  theme_classic()
+
+SLR_model <- lm(SLR_data$monthly_income ~ SLR_data$total_work_year)
+
+summary(SLR_model)
+```
+
+
+```{r}
+#Checking normality 
+
+# Create a new column in SLR.data that will store the residuals
+SLR_data$res <- SLR_model$residuals
+SLR_data$fit <- SLR_model$fitted.values
+
+hist <- ggplot(SLR_data)+
+  geom_histogram(aes(x=res, y=..density..),
+                 fill='thistle2',
+                 colour='black',
+                 bins=6)+
+  labs(x='Residuals', y='Density',
+       title='Model Residuals, n=30')+
+  theme_classic()
+
+qq <- ggplot(SLR_data, aes(sample=res))+
+  geom_qq()+
+  geom_qq_line()+
+  labs(x='N(0, 1) Percentiles',
+       y='Residual Percentiles', 
+       title='Normal QQ Plot of Residuals')+
+  theme_light()
+
+grid.arrange(hist, qq, nrow=1)  
+```
+
+```{r}
+ggplot(SLR_data, aes(x=total_work_year, y=res))+
+  geom_point()+
+  geom_hline(yintercept=0, 
+             colour='red',
+             lty=2)+
+  labs(x='Total_work_years(Years)',
+       y='Residuals')+
+  theme_light()
+
+mean(SLR_data$res)
+```
+
+
+Research Question 1: 
+Method 1(Two population hypothesis testing)
+
+Let mu_1 = average monthly income for employees who are leaving the IBM.
+Let mu_2 = average monthly income for employees who are staying in IBM.
+
+Null hypothesis: The average monthly income for both type of employees are 
+equal
+H_0: mu_1 == mu_2
+
+Alternative Hypothesis: The average monthly income of employees who are leaving
+is lower than employees who are staying in IBM.
+H_A: mu_1 < mu_2 
+```{r}
+#Clean the data by removing any NA among the variable that we need to use.
+IBM_hyp_data <- IBM_data%>%
+  filter(!is.na(Attrition) & !is.na(MonthlyIncome))
+
+#Create a dataset to only contain employees who are leaving IBM
+leave <- IBM_hyp_data%>%
+  filter(Attrition == "Yes")
+
+#Create a dataset to only contain employees who are staying in IBM
+stay <- IBM_hyp_data%>%
+  filter(Attrition == "No")
+
+#Let x_bar_1 be income mean of "attrition" employees
+A_income_mean <- mean(leave$MonthlyIncome)
+#Let x_bar_2 be income mean of "not attrition" employees
+NA_income_mean <- mean(stay$MonthlyIncome)
+
+#Let S_1 be the standard deviation of "attrition" employees
+A_sd <- sd(leave$MonthlyIncome)
+#Let S_2 be the standard deviation of "not attrition" employees
+NA_sd <- sd(stay$MonthlyIncome)
+
+#Let n_1 be the number of "attrition" employees
+A_size <- nrow(leave)
+#Let n_2 be the number of "non attrition" employees
+NA_size <- nrow(stay)
+
+#Compute the test statistic
+test_stats <- (A_income_mean - NA_income_mean)/
+  sqrt(A_sd^2/A_size + NA_sd^2/NA_size)
+
+#Compute the degree of freedom
+df <- floor ((A_sd^2/A_size + NA_sd^2/NA_size)^2/
+               (((A_sd^2)/A_size)^2/(A_size-1)+((NA_sd^2)/NA_size)^2/(NA_size-1)))
+
+#Calculate the P-value(H_a: mu_1 < mu_2 )
+p_value <- pt(test_stats, df=df)
+
+test_stats
+df
+p_value
+```
+
+Method 2(Two population mean bootstrapped confidence interval)
+
+Using bootstrap to estimate the difference in average monthly income for 
+attrition employees and non attrition employees with 95\% confidence.
+```{r}
+index_attrition <- IBM_data$Attrition == "Yes"
+obs_attrition <- IBM_data$MonthlyIncome[index_attrition]
+obs_not_attrition <- IBM_data$MonthlyIncome[!index_attrition]
+
+B <- 5000
+boot_mean_diff <- c()
+set.seed(539)
+
+for(i in 1:B){
+  boot_attrition <- sample(obs_attrition, replace = TRUE)
+  boot_not_attrition <- sample(obs_not_attrition, replace = TRUE)
+  boot_mean_diff[i] <- mean(boot_not_attrition) - mean(boot_attrition)
+}
+
+ci_mean_diff <- quantile(boot_mean_diff, probs = c(0.025, 0.975))
+ci_mean_diff
+```
+
+Simple Linear Regression:
+Is there any association between the a sales employee's total years worked and their
+monthly income? We are specifically targeting the male employees in the sales
+department.
+
+```{r}
+#Plot the scatter plot
+Male_data <- IBM_data%>%filter(Gender == "Male")
+Sales_data <- Male_data%>%filter(Department == "Sales")
+
+SLR_data <- tibble(monthly_income = Sales_data$MonthlyIncome, 
+               total_work_year = Sales_data$TotalWorkingYears)
+
+ggplot(SLR_data, aes(x=total_work_year, y=monthly_income))+
+  geom_point()+
+  labs(x = "Total work experience (Years)",
+       y = "Monthly Income (Dollars)",
+       title = "The scatterplot employee's total work years vs monthly income")
+```
+
+The scatter plot shows a positive linear relation with moderate strength. 
+However, constant variance assumption is likely violated.
+
+```{r}
+SLR_model <- lm(SLR_data$monthly_income ~ SLR_data$total_work_year)
+
+summary(SLR_model)
+```
+From the summary of this  model, we can determine that the fitted equation is
+
+$\hat{y_i}$ = 2470.11 + 413.37*${x_i}$ \
+$\hat{y_i}$ is the monthly income, and ${x_i}$ is the total work years.
+
+The model tells us that when the employee have no work experience, their 
+estimated monthly wage is $2470.11 . Every additional year of work experience an
+employee have will increase their estimated monthly wage by $413.37. Therefore 
+experienced employees are likely to be paid more monthly. 
+
+The model also tells us that ${R^2}$ = 0.5657, meaning that about 56.57% of total 
+variability in an employee's monthly income can be explained by their total
+work years; which is quite high. 
+
+The p-value for testing the null hypothesis(H_0): ${\beta_1}$  = 0 , and the 
+alternative hypothesis(H_A): ${\beta_1}$ $!= 0 is less than 2.2e-16, which is 
+extremely small. Therefore we can reject the null hypothesis, meaning there is 
+indeed a linear correlation between the monthly income and total work years.
+
+
+```{r}
+#Compute the 95% confidence interval for beta_0 and beta_1
+
+#Compute the critical value, degree of freedom of residual is 
+#255 from the model summary
+
+t <- qt(c(0.025, 0.975), df=255)
+
+#Compute the 95% Confidence interval for beta_0
+CI_beta_0 <- 2470.11 + t*293.43
+
+#Compute the 95% Confidence interval for beta_1
+CI_beta_1 <- 413.37 + t*22.68
+
+CI_beta_0
+CI_beta_1
+```
+The 95% confidence interval for the intercept is [1892.255, 3047.965] and for 
+the slope is [368.706, 458.034]. The interval for the intercept is relatively 
+wide, meaning that the estimated monthly income for employee with no work 
+experience can be quite inconsistent. This can be explained by the fact that 
+wage can be varied by different educational background, department, and 
+other factors. The interval for the slope is much narrower, therefore the 
+increase in monthly wage as total work year increase by one is more consistent.
+
+
+
